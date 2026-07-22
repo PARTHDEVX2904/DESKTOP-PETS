@@ -50,6 +50,30 @@ BLINK_SPRITE = [
     [0, 0, 1, 0, 1, 0, 0, 1, 0, 1, 0, 0],
 ]
 
+# Walk cycle: same as SPRITE, but the bottom leg row alternates which pair of
+# legs is planted vs lifted (cleared to 0), for a 2-frame walking gait.
+WALK1_SPRITE = [
+    [0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0],
+    [0, 0, 1, 2, 1, 1, 1, 1, 2, 1, 0, 0],
+    [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+    [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+    [0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0],
+    [0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0],
+    [0, 0, 1, 0, 1, 0, 0, 1, 0, 1, 0, 0],
+    [0, 0, 1, 0, 0, 0, 0, 0, 0, 1, 0, 0],  # outer legs planted, inner legs lifted
+]
+
+WALK2_SPRITE = [
+    [0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0],
+    [0, 0, 1, 2, 1, 1, 1, 1, 2, 1, 0, 0],
+    [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+    [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+    [0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0],
+    [0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0],
+    [0, 0, 1, 0, 1, 0, 0, 1, 0, 1, 0, 0],
+    [0, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0],  # inner legs planted, outer legs lifted
+]
+
 COLORS = {
     1: "#F05B45",  # body
     2: "#110C0A",  # eyes (open)
@@ -110,7 +134,8 @@ class SpriteWidget(QWidget):
     def __init__(self, scale: int = SCALE, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.scale = scale
-        self.frame = SPRITE  # "current frame" grid
+        self.frame = SPRITE  # "current frame" grid (what's actually painted)
+        self._base_frame = SPRITE  # frame to restore to once a blink ends
         self.setFixedSize(self.sizeHint())
 
         self._blink_timer = QTimer(self)
@@ -120,14 +145,25 @@ class SpriteWidget(QWidget):
     def sizeHint(self) -> QSize:  # noqa: N802 (Qt naming)
         return QSize(GRID_COLS * self.scale, GRID_ROWS * self.scale)
 
+    def set_base_frame(self, grid: list[list[int]]) -> None:
+        """Set the resting/walking frame (idle or walk-cycle), independent of blink.
+
+        If a blink is currently mid-flight, the change is deferred: it takes
+        effect once the blink ends instead of interrupting it.
+        """
+        self._base_frame = grid
+        if not self._blink_timer.isActive():
+            self.frame = grid
+            self.update()
+
     def blink(self) -> None:
-        """Briefly swap to the eyes-closed frame, then back to the normal one."""
+        """Briefly swap to the eyes-closed frame, then back to the base frame."""
         self.frame = BLINK_SPRITE
         self.update()
         self._blink_timer.start(BLINK_DURATION_MS)
 
     def _end_blink(self) -> None:
-        self.frame = SPRITE
+        self.frame = self._base_frame
         self.update()
 
     def paintEvent(self, event) -> None:  # noqa: N802 (Qt naming)

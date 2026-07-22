@@ -2,17 +2,29 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, QPoint
+import math
+import random
+
+from PySide6.QtCore import Qt, QPoint, QTimer
 from PySide6.QtGui import QGuiApplication
 from PySide6.QtWidgets import QMenu, QWidget
 
-from .sprite import SpriteWidget, cell_is_solid
+from .sprite import SPRITE, WALK1_SPRITE, WALK2_SPRITE, SpriteWidget, cell_is_solid
 
 # --- Config ---------------------------------------------------------------
 
 ALWAYS_ON_TOP = True
 SIDE_MARGIN = 12     # px gap from the right screen edge
 TASKBAR_GAP = 0  # px gap left above the taskbar so the pet clearly floats above it
+
+TICK_MS = 33                  # animation tick interval (~30fps)
+BOB_AMPLITUDE = 3             # px of vertical travel while idle
+BOB_PERIOD_MS = 1200          # duration of one full idle-bob cycle
+WALK_SPEED = 50                # px/sec while walking
+WALK_FRAME_INTERVAL_MS = 180  # leg-swap interval while walking
+WALK_MIN_INTERVAL_S = 8       # min seconds between autonomous walks
+WALK_MAX_INTERVAL_S = 20      # max seconds between autonomous walks
+WALK_MIN_DISTANCE = 60        # px, so a walk isn't a tiny shuffle
 
 
 class PetWindow(QWidget):
@@ -41,8 +53,25 @@ class PetWindow(QWidget):
 
         self._drag_offset: QPoint | None = None
 
+        # Animation state: self._anchor is the logical resting/walking position
+        # (without the idle-bob offset applied).
+        self._anchor = QPoint(0, 0)
+        self._bob_phase = 0.0
+        self._walking = False
+        self._walk_target_x = 0
+        self._walk_frame_toggle = False
+        self._walk_frame_elapsed = 0
+
+        self._walk_timer = QTimer(self)
+        self._walk_timer.setSingleShot(True)
+        self._walk_timer.timeout.connect(self._start_walk)
+
+        self._tick_timer = QTimer(self)
+        self._tick_timer.timeout.connect(self._on_tick)
+
         # Always open in the bottom-right corner, just above the taskbar.
         self.reset_position()
+        self._tick_timer.start(TICK_MS)
 
     # --- Placement ----------------------------------------------------------
 
@@ -52,7 +81,76 @@ class PetWindow(QWidget):
         area = screen.availableGeometry()  # working area — excludes the taskbar
         x = area.right() - self.width() - SIDE_MARGIN
         y = area.bottom() - self.height() - TASKBAR_GAP
-        self.move(QPoint(x, y))
+        self._anchor = QPoint(x, y)
+        self._walking = False
+        self._sprite.set_base_frame(SPRITE)
+        self.move(self._anchor)
+        self._schedule_next_walk()
+
+    # --- Idle bob / autonomous walk ------------------------------------------
+
+    def _schedule_next_walk(self) -> None:
+        delay_s = random.uniform(WALK_MIN_INTERVAL_S, WALK_MAX_INTERVAL_S)
+        self._walk_timer.start(int(delay_s * 1000))
+
+    def _start_walk(self) -> None:
+        if self._drag_offset is not None:
+            # Being dragged right now; try again after the usual random delay.
+            self._schedule_next_walk()
+            return
+
+        screen = QGuiApplication.primaryScreen()
+        area = screen.availableGeometry()
+        min_x = area.left() + SIDE_MARGIN
+        max_x = area.right() - self.width() - SIDE_MARGIN
+        if max_x <= min_x:
+            self._schedule_next_walk()
+            return
+
+        candidate = self._anchor.x()
+        for _ in range(5):
+            candidate = random.randint(min_x, max_x)
+            if abs(candidate - self._anchor.x()) >= WALK_MIN_DISTANCE:
+                break
+
+        self._walk_target_x = candidate
+        self._walking = True
+        self._walk_frame_toggle = False
+        self._walk_frame_elapsed = 0
+        self._sprite.set_base_frame(WALK1_SPRITE)
+
+    def _on_tick(self) -> None:
+        if self._drag_offset is not None:
+            return  # dragging already drives position via mouse events
+        if self._walking:
+            self._step_walk()
+        else:
+            self._step_idle_bob()
+
+    def _step_walk(self) -> None:
+        step = max(1, round(WALK_SPEED * TICK_MS / 1000))
+        dx = self._walk_target_x - self._anchor.x()
+        if abs(dx) <= step:
+            self._anchor.setX(self._walk_target_x)
+            self._walking = False
+            self._sprite.set_base_frame(SPRITE)
+            self.move(self._anchor)
+            self._schedule_next_walk()
+            return
+
+        self._anchor.setX(self._anchor.x() + (step if dx > 0 else -step))
+        self.move(self._anchor)
+
+        self._walk_frame_elapsed += TICK_MS
+        if self._walk_frame_elapsed >= WALK_FRAME_INTERVAL_MS:
+            self._walk_frame_elapsed = 0
+            self._walk_frame_toggle = not self._walk_frame_toggle
+            self._sprite.set_base_frame(WALK2_SPRITE if self._walk_frame_toggle else WALK1_SPRITE)
+
+    def _step_idle_bob(self) -> None:
+        self._bob_phase = (self._bob_phase + TICK_MS / BOB_PERIOD_MS) % 1.0
+        offset = round(BOB_AMPLITUDE * math.sin(self._bob_phase * 2 * math.pi))
+        self.move(self._anchor.x(), self._anchor.y() + offset)
 
     # --- Dragging -----------------------------------------------------------
 
@@ -61,6 +159,8 @@ class PetWindow(QWidget):
             pos = event.position().toPoint()
             # Only react when the click lands on a solid sprite cell.
             if cell_is_solid(pos.x(), pos.y(), self._scale):
+                self._walking = False
+                self._sprite.set_base_frame(SPRITE)
                 self._sprite.blink()
                 self._drag_offset = (
                     event.globalPosition().toPoint() - self.frameGeometry().topLeft()
@@ -79,6 +179,8 @@ class PetWindow(QWidget):
     def mouseReleaseEvent(self, event) -> None:  # noqa: N802 (Qt naming)
         if self._drag_offset is not None and event.button() == Qt.MouseButton.LeftButton:
             self._drag_offset = None
+            self._anchor = self.pos()
+            self._schedule_next_walk()
             event.accept()
             return
         super().mouseReleaseEvent(event)

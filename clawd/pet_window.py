@@ -7,11 +7,12 @@ import random
 
 from PySide6.QtCore import Qt, QPoint, QTimer
 from PySide6.QtGui import QGuiApplication
-from PySide6.QtWidgets import QWidget
+from PySide6.QtWidgets import QApplication, QMenu, QWidget
 
 from .music import MusicWatcher
 from .settings import load_glasses_state, save_glasses_state
 from .sprite import (
+    BLINK_SPRITE,
     GRID_COLS,
     GRID_ROWS,
     MARGIN_CELLS,
@@ -36,6 +37,8 @@ WALK_FRAME_INTERVAL_MS = 180  # leg-swap interval while walking
 WALK_MIN_INTERVAL_S = 8       # min seconds between autonomous walks
 WALK_MAX_INTERVAL_S = 20      # max seconds between autonomous walks
 WALK_MIN_DISTANCE = 60        # px, so a walk isn't a tiny shuffle
+
+TUCK_IN_DURATION_MS = 500     # how long Claw'd's eyes-closed goodbye shows before quitting
 
 
 class PetWindow(QWidget):
@@ -202,17 +205,47 @@ class PetWindow(QWidget):
             event.accept()
             return
 
-        if event.button() == Qt.MouseButton.RightButton:
-            self._toggle_glasses()
-            event.accept()
-            return
-
         super().mousePressEvent(event)
 
-    def _toggle_glasses(self) -> None:
-        new_state = not self._sprite.glasses_on
-        self._sprite.set_glasses(new_state)
-        save_glasses_state(new_state)
+    def contextMenuEvent(self, event) -> None:  # noqa: N802 (Qt naming)
+        menu = QMenu(self)
+        menu.setStyleSheet("""
+            QMenu {
+                padding: 2px;
+                font-size: 11px;
+            }
+            QMenu::item {
+                padding: 3px 12px 3px 18px;
+            }
+            QMenu::separator {
+                height: 1px;
+                margin: 2px 4px;
+            }
+        """)
+
+        savage_action = menu.addAction("Savage mode")
+        savage_action.setCheckable(True)
+        savage_action.setChecked(self._sprite.glasses_on)
+        savage_action.toggled.connect(self._on_savage_toggled)
+
+        menu.addSeparator()
+        menu.addAction("Reset position", self.reset_position)
+        menu.addAction("Tuck pet in", self._tuck_in_and_quit)
+
+        menu.exec(event.globalPos())
+
+    def _on_savage_toggled(self, on: bool) -> None:
+        self._sprite.set_glasses(on)
+        save_glasses_state(on)
+
+    def _tuck_in_and_quit(self) -> None:
+        """Freeze Claw'd with his eyes closed for a moment, then quit."""
+        self._tick_timer.stop()
+        self._walk_timer.stop()
+        self._sprite._blink_timer.stop()
+        self._sprite.frame = BLINK_SPRITE
+        self._sprite.update()
+        QTimer.singleShot(TUCK_IN_DURATION_MS, QApplication.quit)
 
     def mouseMoveEvent(self, event) -> None:  # noqa: N802 (Qt naming)
         if self._drag_offset is not None and (event.buttons() & Qt.MouseButton.LeftButton):

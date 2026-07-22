@@ -9,8 +9,18 @@ from PySide6.QtCore import Qt, QPoint, QTimer
 from PySide6.QtGui import QGuiApplication
 from PySide6.QtWidgets import QWidget
 
+from .music import MusicWatcher
 from .settings import load_glasses_state, save_glasses_state
-from .sprite import SPRITE, WALK1_SPRITE, WALK2_SPRITE, SpriteWidget, cell_is_solid
+from .sprite import (
+    GRID_COLS,
+    GRID_ROWS,
+    MARGIN_CELLS,
+    SPRITE,
+    WALK1_SPRITE,
+    WALK2_SPRITE,
+    SpriteWidget,
+    cell_is_solid,
+)
 
 # --- Config ---------------------------------------------------------------
 
@@ -47,10 +57,15 @@ class PetWindow(QWidget):
         # Only the sprite pixels should be visible; everything else transparent.
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
 
-        # The sprite is the sole content; the window is sized exactly to it.
+        # The sprite is the sole content; the window is sized exactly to it
+        # (which includes a transparent margin around the sprite itself, for
+        # accessories like the headphones that extend beyond the 12x8 body).
         self._sprite = SpriteWidget(parent=self)
         self.setFixedSize(self._sprite.size())
         self._scale = self._sprite.scale
+        self._margin_px = MARGIN_CELLS * self._scale
+        self._sprite_w = GRID_COLS * self._scale
+        self._sprite_h = GRID_ROWS * self._scale
 
         self._drag_offset: QPoint | None = None
 
@@ -73,6 +88,11 @@ class PetWindow(QWidget):
         # Restore whether the sunglasses accessory was on last session.
         self._sprite.set_glasses(load_glasses_state())
 
+        # Headphones are fully automatic (music-driven) and never persisted —
+        # recomputed fresh each run by polling off the GUI thread.
+        self._music_watcher = MusicWatcher(self)
+        self._music_watcher.playing_changed.connect(self._sprite.set_headphones)
+
         # Always open in the bottom-right corner, just above the taskbar.
         self.reset_position()
         self._tick_timer.start(TICK_MS)
@@ -80,11 +100,14 @@ class PetWindow(QWidget):
     # --- Placement ----------------------------------------------------------
 
     def reset_position(self) -> None:
-        """Move the pet to the bottom-right corner, just above the taskbar."""
+        """Move the pet (sprite, not the padded window) to the bottom-right
+        corner, just above the taskbar."""
         screen = QGuiApplication.primaryScreen()
         area = screen.availableGeometry()  # working area — excludes the taskbar
-        x = area.right() - self.width() - SIDE_MARGIN
-        y = area.bottom() - self.height() - TASKBAR_GAP
+        sprite_right = area.right() - SIDE_MARGIN
+        sprite_bottom = area.bottom() - TASKBAR_GAP
+        x = sprite_right - self._sprite_w - self._margin_px
+        y = sprite_bottom - self._sprite_h - self._margin_px
         self._anchor = QPoint(x, y)
         self._walking = False
         self._sprite.set_base_frame(SPRITE)
@@ -160,8 +183,12 @@ class PetWindow(QWidget):
 
     def mousePressEvent(self, event) -> None:  # noqa: N802 (Qt naming)
         pos = event.position().toPoint()
+        # Window coords -> sprite-local coords (undo the accessory margin)
+        # before hit-testing against the base grid.
+        sprite_x = pos.x() - self._margin_px
+        sprite_y = pos.y() - self._margin_px
         # Only react when the click lands on a solid sprite cell.
-        if not cell_is_solid(pos.x(), pos.y(), self._scale):
+        if not cell_is_solid(sprite_x, sprite_y, self._scale):
             super().mousePressEvent(event)
             return
 

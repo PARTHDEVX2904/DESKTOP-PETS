@@ -59,8 +59,9 @@ class PetWindow(QWidget):
     def mousePressEvent(self, event) -> None:  # noqa: N802 (Qt naming)
         if event.button() == Qt.MouseButton.LeftButton:
             pos = event.position().toPoint()
-            # Only start a drag when the click lands on a solid sprite cell.
+            # Only react when the click lands on a solid sprite cell.
             if cell_is_solid(pos.x(), pos.y(), self._scale):
+                self._sprite.blink()
                 self._drag_offset = (
                     event.globalPosition().toPoint() - self.frameGeometry().topLeft()
                 )

@@ -77,3 +77,18 @@ python -m clawd
 `SCALE` (pixels per grid cell) is defined once at the top of `clawd/sprite.py`.
 Change it to resize the whole pet cleanly; it stays crisp at any scale.
 Default `SCALE = 14` → a `168 × 112` px pet.
+
+
+## this is for how to push and pull from the github so that i can learn it manually
+echo "# DESKTOP-PETS" >> README.md
+git init
+git add README.md
+git commit -m "first commit"
+git branch -M main
+git remote add origin git@github.com:PARTHDEVX2904/DESKTOP-PETS.git
+git push -u origin main
+
+## pull the commits
+git remote add origin git@github.com:PARTHDEVX2904/DESKTOP-PETS.git
+git branch -M main
+git push -u origin main

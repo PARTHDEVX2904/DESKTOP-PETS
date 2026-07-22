@@ -7,8 +7,9 @@ import random
 
 from PySide6.QtCore import Qt, QPoint, QTimer
 from PySide6.QtGui import QGuiApplication
-from PySide6.QtWidgets import QMenu, QWidget
+from PySide6.QtWidgets import QWidget
 
+from .settings import load_glasses_state, save_glasses_state
 from .sprite import SPRITE, WALK1_SPRITE, WALK2_SPRITE, SpriteWidget, cell_is_solid
 
 # --- Config ---------------------------------------------------------------
@@ -68,6 +69,9 @@ class PetWindow(QWidget):
 
         self._tick_timer = QTimer(self)
         self._tick_timer.timeout.connect(self._on_tick)
+
+        # Restore whether the sunglasses accessory was on last session.
+        self._sprite.set_glasses(load_glasses_state())
 
         # Always open in the bottom-right corner, just above the taskbar.
         self.reset_position()
@@ -155,19 +159,33 @@ class PetWindow(QWidget):
     # --- Dragging -----------------------------------------------------------
 
     def mousePressEvent(self, event) -> None:  # noqa: N802 (Qt naming)
+        pos = event.position().toPoint()
+        # Only react when the click lands on a solid sprite cell.
+        if not cell_is_solid(pos.x(), pos.y(), self._scale):
+            super().mousePressEvent(event)
+            return
+
         if event.button() == Qt.MouseButton.LeftButton:
-            pos = event.position().toPoint()
-            # Only react when the click lands on a solid sprite cell.
-            if cell_is_solid(pos.x(), pos.y(), self._scale):
-                self._walking = False
-                self._sprite.set_base_frame(SPRITE)
-                self._sprite.blink()
-                self._drag_offset = (
-                    event.globalPosition().toPoint() - self.frameGeometry().topLeft()
-                )
-                event.accept()
-                return
+            self._walking = False
+            self._sprite.set_base_frame(SPRITE)
+            self._sprite.blink()
+            self._drag_offset = (
+                event.globalPosition().toPoint() - self.frameGeometry().topLeft()
+            )
+            event.accept()
+            return
+
+        if event.button() == Qt.MouseButton.RightButton:
+            self._toggle_glasses()
+            event.accept()
+            return
+
         super().mousePressEvent(event)
+
+    def _toggle_glasses(self) -> None:
+        new_state = not self._sprite.glasses_on
+        self._sprite.set_glasses(new_state)
+        save_glasses_state(new_state)
 
     def mouseMoveEvent(self, event) -> None:  # noqa: N802 (Qt naming)
         if self._drag_offset is not None and (event.buttons() & Qt.MouseButton.LeftButton):
@@ -184,14 +202,3 @@ class PetWindow(QWidget):
             event.accept()
             return
         super().mouseReleaseEvent(event)
-
-    # --- Context menu (nice-to-have; mirrors the tray menu) ------------------
-
-    def contextMenuEvent(self, event) -> None:  # noqa: N802 (Qt naming)
-        pos = event.pos()
-        if not cell_is_solid(pos.x(), pos.y(), self._scale):
-            return
-        menu = QMenu(self)
-        menu.addAction("Reset position", self.reset_position)
-        menu.addAction("Quit", QGuiApplication.quit)
-        menu.exec(event.globalPos())

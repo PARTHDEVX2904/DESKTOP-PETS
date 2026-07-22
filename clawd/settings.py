@@ -1,8 +1,12 @@
-"""Persist and restore the pet window's on-screen position.
+"""Persist and restore small bits of pet state (position, accessories).
 
 Uses QSettings, which on Windows writes to the registry automatically, so no
-external file handling is needed. First run (no saved position) returns None so
-the caller can place the pet bottom-right with a margin.
+external file handling is needed.
+
+Note: window position is intentionally NOT restored on launch — the pet always
+opens bottom-right above the taskbar (see pet_window.reset_position). The
+load_position/save_position helpers are kept for potential future use but are
+not currently called.
 """
 
 from __future__ import annotations
@@ -14,6 +18,7 @@ ORG_NAME = "Clawd"
 
 _POS_X = "window/x"
 _POS_Y = "window/y"
+_GLASSES_ON = "accessories/glasses_on"
 
 
 def _settings() -> QSettings:
@@ -38,4 +43,19 @@ def save_position(pos: QPoint) -> None:
     s = _settings()
     s.setValue(_POS_X, int(pos.x()))
     s.setValue(_POS_Y, int(pos.y()))
+    s.sync()
+
+
+def load_glasses_state() -> bool:
+    """Return whether the sunglasses accessory was on last time, default False."""
+    value = _settings().value(_GLASSES_ON, False)
+    if isinstance(value, bool):
+        return value
+    return str(value).lower() in ("true", "1")
+
+
+def save_glasses_state(on: bool) -> None:
+    """Persist whether the sunglasses accessory is on."""
+    s = _settings()
+    s.setValue(_GLASSES_ON, bool(on))
     s.sync()

@@ -1,4 +1,4 @@
-"""System-tray icon and menu (Reset position, Quit).
+"""System-tray icon and menu (Reset position, Sunglasses, Quit).
 
 The tray icon is rendered from the sprite grid itself, so no external icon asset
 is needed.
@@ -10,6 +10,7 @@ from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QApplication, QMenu, QSystemTrayIcon
 
 from .pet_window import PetWindow
+from .settings import save_glasses_state
 from .sprite import render_pixmap
 
 
@@ -21,6 +22,21 @@ def build_tray(pet: PetWindow) -> QSystemTrayIcon:
 
     menu = QMenu()
     menu.addAction("Reset position", pet.reset_position)
+    menu.addSeparator()
+
+    sunglasses_action = menu.addAction("Sunglasses \U0001F60E")
+    sunglasses_action.setCheckable(True)
+    sunglasses_action.setChecked(pet._sprite.glasses_on)
+
+    def _on_sunglasses_toggled(on: bool) -> None:
+        pet._sprite.set_glasses(on)
+        save_glasses_state(on)
+
+    sunglasses_action.toggled.connect(_on_sunglasses_toggled)
+    # Keep the tray checkbox in sync when glasses are toggled from the mascot
+    # itself (right-click) rather than from this menu.
+    pet._sprite.glasses_changed.connect(sunglasses_action.setChecked)
+
     menu.addSeparator()
     menu.addAction("Quit", QApplication.quit)
     tray.setContextMenu(menu)

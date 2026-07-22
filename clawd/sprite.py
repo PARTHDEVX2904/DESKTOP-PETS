@@ -2,8 +2,8 @@
 
 The character is a 12-wide x 8-tall grid. Each cell is one of four states:
     0 = transparent / empty
-    1 = body       -> #F05B45
-    2 = eye (open) -> #110C0A, filled square
+    1 = body        -> #F05B45
+    2 = eye (open)  -> #110C0A, filled square
     3 = eye (blink) -> #110C0A, thin horizontal line (closed eye)
 
 Keeping the sprite as grid data (rather than an image asset) means future
@@ -14,7 +14,7 @@ single static SPRITE below.
 
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, QRect, QSize, QTimer
+from PySide6.QtCore import Qt, QRect, QSize, QTimer, Signal
 from PySide6.QtGui import QColor, QPainter, QPixmap
 from PySide6.QtWidgets import QWidget
 
@@ -84,6 +84,64 @@ GRID_COLS = len(SPRITE[0])  # 12
 GRID_ROWS = len(SPRITE)     # 8
 
 
+# --- Accessories --------------------------------------------------------------
+# Accessories are higher-resolution overlays with their own grid/coordinate
+# system, positioned over the base sprite via fractional base-cell offsets so
+# they scale together with it as SCALE changes. This keeps window/drag/tray
+# logic untouched — an accessory is just "an extra thing paintEvent draws".
+# Sunglasses are the first one; more (hats, etc.) could follow the same shape.
+
+# Sunglasses overlay (44 wide x 10 tall), drawn over the eyes when enabled.
+#   0 = transparent (base sprite shows through, incl. the nose-bridge gap)
+#   1 = frame -> #0A0B1F
+#   2 = highlight -> #F5F5F5
+SUNGLASSES = [
+    [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+    [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+    [1, 1, 2, 2, 1, 2, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 2, 1, 1, 2, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+    [1, 1, 2, 2, 1, 2, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 2, 1, 1, 2, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+    [1, 1, 1, 2, 2, 1, 1, 2, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 2, 2, 1, 1, 2, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0],
+    [1, 1, 1, 2, 2, 1, 1, 2, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 2, 2, 1, 1, 2, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0],
+    [0, 0, 1, 1, 1, 2, 2, 1, 1, 2, 2, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 2, 2, 1, 1, 2, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0],
+    [0, 0, 1, 1, 1, 2, 2, 1, 1, 2, 2, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 2, 2, 1, 1, 2, 2, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0],
+    [0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0],
+    [0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0],
+]
+
+SUNGLASSES_COLORS = {1: "#0A0B1F", 2: "#F5F5F5"}
+SUNGLASSES_ROWS = len(SUNGLASSES)     # 10
+SUNGLASSES_COLS = len(SUNGLASSES[0])  # 44
+
+# Placement, in fractional base-sprite cells (tunable by eye). Centers the
+# lenses on SPRITE's eyes and lets the orange nose-bridge show through the gap.
+GLASSES_LEFT_CELLS = 1.6
+GLASSES_TOP_CELLS = 0.5
+GLASSES_WIDTH_CELLS = 8.8
+
+
+def paint_sunglasses(painter: QPainter, scale: int) -> None:
+    """Draw SUNGLASSES over the sprite, in its own finer coordinate system.
+
+    Positioned via fractional base-cell offsets so it scales together with the
+    sprite as SCALE changes. Cell boundaries are rounded to whole pixels so
+    adjacent cells tile with no seams even when the per-cell size isn't an
+    integer.
+    """
+    ox = GLASSES_LEFT_CELLS * scale
+    oy = GLASSES_TOP_CELLS * scale
+    cw = (GLASSES_WIDTH_CELLS * scale) / SUNGLASSES_COLS
+    ch = cw
+    for r, row in enumerate(SUNGLASSES):
+        for c, v in enumerate(row):
+            if v == 0:
+                continue
+            x0 = round(ox + c * cw)
+            x1 = round(ox + (c + 1) * cw)
+            y0 = round(oy + r * ch)
+            y1 = round(oy + (r + 1) * ch)
+            painter.fillRect(QRect(x0, y0, x1 - x0, y1 - y0), QColor(SUNGLASSES_COLORS[v]))
+
+
 # --- Rendering helpers -------------------------------------------------------
 
 def paint_grid(painter: QPainter, grid: list[list[int]], scale: int) -> None:
@@ -131,11 +189,14 @@ def cell_is_solid(x: int, y: int, scale: int = SCALE,
 class SpriteWidget(QWidget):
     """A QWidget that paints the current sprite frame, one filled square per cell."""
 
+    glasses_changed = Signal(bool)
+
     def __init__(self, scale: int = SCALE, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.scale = scale
         self.frame = SPRITE  # "current frame" grid (what's actually painted)
         self._base_frame = SPRITE  # frame to restore to once a blink ends
+        self.glasses_on = False
         self.setFixedSize(self.sizeHint())
 
         self._blink_timer = QTimer(self)
@@ -166,9 +227,18 @@ class SpriteWidget(QWidget):
         self.frame = self._base_frame
         self.update()
 
+    def set_glasses(self, on: bool) -> None:
+        if on == self.glasses_on:
+            return
+        self.glasses_on = on
+        self.glasses_changed.emit(on)
+        self.update()
+
     def paintEvent(self, event) -> None:  # noqa: N802 (Qt naming)
         painter = QPainter(self)
         # Crisp edges: no antialiasing on the pixel rects.
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, False)
         paint_grid(painter, self.frame, self.scale)
+        if self.glasses_on:
+            paint_sunglasses(painter, self.scale)
         painter.end()

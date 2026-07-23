@@ -72,6 +72,10 @@ python -m clawd
 
 (In PowerShell, use `cd "PROJECTS\PETS"` — same command otherwise.)
 
+**Or, from any Command Prompt window:** just type `wakeclawd`. `PETS\bin` is on this account's
+PATH, so `wakeclawd` launches Claw'd with no console window, from any directory. Running it again
+while he's already awake is a safe no-op (a single-instance lock prevents duplicate pets).
+
 ## Customizing size
 
 `SCALE` (pixels per grid cell) is defined once at the top of `clawd/sprite.py`.

@@ -27,14 +27,19 @@ def main() -> int:
     # Keep a reference so the tray icon isn't garbage-collected.
     tray = build_tray(pet)  # noqa: F841
 
-    # Start the music-detection watcher now that the window is showing.
+    # Start the background watchers now that the window is showing.
     pet._music_watcher.start()
+    pet._typing_watcher.start()
 
-    def _stop_watcher() -> None:
+    def _stop_watchers() -> None:
         pet._music_watcher.requestInterruption()
         pet._music_watcher.wait()
+        pet._typing_watcher.requestInterruption()
+        pet._typing_watcher.wait()
+        pet._typing_anim_timer.stop()
+        pet._typing_linger_timer.stop()
 
-    app.aboutToQuit.connect(_stop_watcher)
+    app.aboutToQuit.connect(_stop_watchers)
 
     return app.exec()
 

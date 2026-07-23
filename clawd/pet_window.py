@@ -15,13 +15,17 @@ from .sprite import (
     BLINK_SPRITE,
     GRID_COLS,
     GRID_ROWS,
+    HAND_ROW_OFFSET_TYPING,
     MARGIN_CELLS,
     SPRITE,
+    TYPE_A,
+    TYPE_B,
     WALK1_SPRITE,
     WALK2_SPRITE,
     SpriteWidget,
     cell_is_solid,
 )
+from .typing_watcher import TypingWatcher
 
 # --- Config ---------------------------------------------------------------
 
@@ -39,6 +43,12 @@ WALK_MAX_INTERVAL_S = 20      # max seconds between autonomous walks
 WALK_MIN_DISTANCE = 60        # px, so a walk isn't a tiny shuffle
 
 TUCK_IN_DURATION_MS = 500     # how long Claw'd's eyes-closed goodbye shows before quitting
+
+TYPING_STEP_MS = 100      # granularity of the typing-animation state machine
+TYPE_JITTER_MS = 300      # how often TYPE_A/TYPE_B alternate while "typing"
+LOOKUP_EVERY_MS = 3500    # how often a look-up pause happens
+LOOKUP_HOLD_MS = 700      # how long the look-up pause lasts
+TYPING_LINGER_MS = 2500   # how long the laptop stays after the last keystroke
 
 
 class PetWindow(QWidget):
@@ -96,6 +106,23 @@ class PetWindow(QWidget):
         self._music_watcher = MusicWatcher(self)
         self._music_watcher.playing_changed.connect(self._sprite.set_headphones)
 
+        # Typing animation: driven by real keystroke activity (never which
+        # key — see typing_watcher.py), also never persisted.
+        self._typing_lookup_active = False
+        self._typing_elapsed_ms = 0
+        self._typing_jitter_elapsed_ms = 0
+        self._typing_hand_toggle = False
+
+        self._typing_anim_timer = QTimer(self)
+        self._typing_anim_timer.timeout.connect(self._step_typing_animation)
+
+        self._typing_linger_timer = QTimer(self)
+        self._typing_linger_timer.setSingleShot(True)
+        self._typing_linger_timer.timeout.connect(self._end_typing)
+
+        self._typing_watcher = TypingWatcher(self)
+        self._typing_watcher.key_pressed.connect(self._on_key_pressed)
+
         # Always open in the bottom-right corner, just above the taskbar.
         self.reset_position()
         self._tick_timer.start(TICK_MS)
@@ -124,8 +151,9 @@ class PetWindow(QWidget):
         self._walk_timer.start(int(delay_s * 1000))
 
     def _start_walk(self) -> None:
-        if self._drag_offset is not None:
-            # Being dragged right now; try again after the usual random delay.
+        if self._drag_offset is not None or self._sprite.typing_on:
+            # Being dragged, or typing (holding still), right now; try again
+            # after the usual random delay.
             self._schedule_next_walk()
             return
 
@@ -150,8 +178,8 @@ class PetWindow(QWidget):
         self._sprite.set_base_frame(WALK1_SPRITE)
 
     def _on_tick(self) -> None:
-        if self._drag_offset is not None:
-            return  # dragging already drives position via mouse events
+        if self._drag_offset is not None or self._sprite.typing_on:
+            return  # dragging, or holding still while typing, already handled elsewhere
         if self._walking:
             self._step_walk()
         else:
@@ -181,6 +209,54 @@ class PetWindow(QWidget):
         self._bob_phase = (self._bob_phase + TICK_MS / BOB_PERIOD_MS) % 1.0
         offset = round(BOB_AMPLITUDE * math.sin(self._bob_phase * 2 * math.pi))
         self.move(self._anchor.x(), self._anchor.y() + offset)
+
+    # --- Typing animation -----------------------------------------------------
+
+    def _on_key_pressed(self) -> None:
+        if not self._sprite.typing_on:
+            self._start_typing()
+        self._typing_linger_timer.start(TYPING_LINGER_MS)
+
+    def _start_typing(self) -> None:
+        self._walk_timer.stop()
+        self._walking = False
+        self._sprite.set_base_frame(SPRITE)
+        self._anchor = self.pos()
+        self._sprite.set_typing(True)
+        self._typing_lookup_active = False
+        self._typing_elapsed_ms = 0
+        self._typing_jitter_elapsed_ms = 0
+        self._typing_hand_toggle = False
+        self._sprite.set_typing_beat(False, TYPE_A, HAND_ROW_OFFSET_TYPING)
+        self._typing_anim_timer.start(TYPING_STEP_MS)
+
+    def _end_typing(self) -> None:
+        self._typing_anim_timer.stop()
+        self._sprite.set_typing(False)
+        self._schedule_next_walk()
+
+    def _step_typing_animation(self) -> None:
+        self._typing_elapsed_ms += TYPING_STEP_MS
+        if self._typing_lookup_active:
+            if self._typing_elapsed_ms >= LOOKUP_HOLD_MS:
+                self._typing_lookup_active = False
+                self._typing_elapsed_ms = 0
+                self._typing_jitter_elapsed_ms = 0
+                self._sprite.set_typing_beat(False, TYPE_A, HAND_ROW_OFFSET_TYPING)
+            return
+
+        if self._typing_elapsed_ms >= LOOKUP_EVERY_MS:
+            self._typing_lookup_active = True
+            self._typing_elapsed_ms = 0
+            self._sprite.set_typing_beat(True, TYPE_A, HAND_ROW_OFFSET_TYPING)
+            return
+
+        self._typing_jitter_elapsed_ms += TYPING_STEP_MS
+        if self._typing_jitter_elapsed_ms >= TYPE_JITTER_MS:
+            self._typing_jitter_elapsed_ms = 0
+            self._typing_hand_toggle = not self._typing_hand_toggle
+            hand = TYPE_B if self._typing_hand_toggle else TYPE_A
+            self._sprite.set_typing_beat(False, hand, HAND_ROW_OFFSET_TYPING)
 
     # --- Dragging -----------------------------------------------------------
 

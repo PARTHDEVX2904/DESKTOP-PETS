@@ -80,6 +80,19 @@ COLORS = {
     3: "#110C0A",  # eyes (blink line)
 }
 
+# Same as SPRITE, but the eyes are shifted up one row (row 0 instead of row 1)
+# — used as a full base-layer replacement during the typing "look up" beat.
+SPRITE_LOOKUP = [
+    [0, 0, 1, 2, 1, 1, 1, 1, 2, 1, 0, 0],
+    [0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0],
+    [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+    [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+    [0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0],
+    [0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0],
+    [0, 0, 1, 0, 1, 0, 0, 1, 0, 1, 0, 0],
+    [0, 0, 1, 0, 1, 0, 0, 1, 0, 1, 0, 0],
+]
+
 GRID_COLS = len(SPRITE[0])  # 12
 GRID_ROWS = len(SPRITE)     # 8
 
@@ -199,6 +212,91 @@ def paint_headphones(painter: QPainter, scale: int, ox: float = 0, oy: float = 0
             painter.fillRect(QRect(x0, y0, x1 - x0, y1 - y0), QColor(HEADPHONE_COLOR))
 
 
+# Laptop overlay (18 wide x 10 tall), drawn at half-cell resolution, centered
+# in front of Claw'd and resting on the ground when he's typing.
+#   0 = transparent, 1 = bezel/hinge, 2 = logo, 3 = keyboard base
+LAPTOP = [
+    [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+    [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+    [1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 1, 1, 1, 1, 1, 1, 1],
+    [1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 1, 1, 1, 1, 1, 1, 1],
+    [1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 1, 1, 1, 1, 1, 1, 1],
+    [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+    [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+    [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+    [3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3],
+    [3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3],
+]
+
+LAPTOP_COLORS = {
+    1: "#2B2F3A",   # bezel / hinge (dark grey) — rows 0-7 are the solid lid-back + hinge
+    2: "#C7CCD1",   # logo (light grey square, centered)
+    3: "#4A5160",   # keyboard base (ash grey) — rows 8-9
+}
+LAPTOP_ROWS = len(LAPTOP)     # 10
+LAPTOP_COLS = len(LAPTOP[0])  # 18
+
+# Placement relative to the sprite origin, in base cells. Centers the 9-cell
+# -wide laptop under the 12-cell sprite with its bottom on the ground line.
+LAPTOP_LEFT_CELLS = 1.5
+LAPTOP_TOP_CELLS = 3.0
+
+# Hand frames (18 wide x 2 tall), drawn in the keyboard's own ash-grey so they
+# blend in while typing and only read as "risen" once they sit on the darker
+# bezel during the look-up beat.
+HAND_COLOR = "#4A5160"
+
+TYPE_A = [
+    [0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0],
+    [0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0],
+]
+TYPE_B = [
+    [0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0],
+    [0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0],
+]
+
+HAND_ROW_OFFSET_TYPING = 8   # sits on the keyboard base (rows 8-9) — blends in
+
+
+def paint_laptop(painter: QPainter, scale: int, ox: float = 0, oy: float = 0) -> None:
+    """Draw LAPTOP over the sprite, at half-cell resolution.
+
+    Same origin/rounding approach as paint_sunglasses/paint_headphones.
+    """
+    origin_x = ox + LAPTOP_LEFT_CELLS * scale
+    origin_y = oy + LAPTOP_TOP_CELLS * scale
+    cw = scale / 2.0
+    ch = cw
+    for r, row in enumerate(LAPTOP):
+        for c, v in enumerate(row):
+            if v == 0:
+                continue
+            x0 = round(origin_x + c * cw)
+            x1 = round(origin_x + (c + 1) * cw)
+            y0 = round(origin_y + r * ch)
+            y1 = round(origin_y + (r + 1) * ch)
+            painter.fillRect(QRect(x0, y0, x1 - x0, y1 - y0), QColor(LAPTOP_COLORS[v]))
+
+
+def paint_hands(painter: QPainter, scale: int, hand_grid: list[list[int]],
+                 row_offset: int, ox: float = 0, oy: float = 0) -> None:
+    """Draw a hand frame within the laptop's own coordinate space, shifted
+    down by ``row_offset`` half-cell rows (typing vs. look-up position)."""
+    origin_x = ox + LAPTOP_LEFT_CELLS * scale
+    origin_y = oy + LAPTOP_TOP_CELLS * scale
+    cw = scale / 2.0
+    ch = cw
+    for r, row in enumerate(hand_grid):
+        for c, v in enumerate(row):
+            if v == 0:
+                continue
+            x0 = round(origin_x + c * cw)
+            x1 = round(origin_x + (c + 1) * cw)
+            y0 = round(origin_y + (row_offset + r) * ch)
+            y1 = round(origin_y + (row_offset + r + 1) * ch)
+            painter.fillRect(QRect(x0, y0, x1 - x0, y1 - y0), QColor(HAND_COLOR))
+
+
 # --- Rendering helpers -------------------------------------------------------
 
 def paint_grid(painter: QPainter, grid: list[list[int]], scale: int, ox: int = 0, oy: int = 0) -> None:
@@ -258,6 +356,10 @@ class SpriteWidget(QWidget):
         self._base_frame = SPRITE  # frame to restore to once a blink ends
         self.glasses_on = False
         self.headphones_on = False
+        self.typing_on = False
+        self._typing_lookup = False
+        self._hand_frame = TYPE_A
+        self._hand_row_offset = HAND_ROW_OFFSET_TYPING
         self.setFixedSize(self.sizeHint())
 
         self._blink_timer = QTimer(self)
@@ -310,17 +412,40 @@ class SpriteWidget(QWidget):
         self.headphones_on = on
         self.update()
 
+    def set_typing(self, on: bool) -> None:
+        if on == self.typing_on:
+            return
+        self.typing_on = on
+        if not on:
+            self._typing_lookup = False
+        self.update()
+
+    def set_typing_beat(self, lookup: bool, hand_frame: list[list[int]], hand_row_offset: int) -> None:
+        """Update which typing beat is showing (typing vs. look-up). No-op —
+        and no repaint — if nothing about the current beat actually changed."""
+        if (lookup, hand_frame, hand_row_offset) == (self._typing_lookup, self._hand_frame, self._hand_row_offset):
+            return
+        self._typing_lookup = lookup
+        self._hand_frame = hand_frame
+        self._hand_row_offset = hand_row_offset
+        self.update()
+
     def paintEvent(self, event) -> None:  # noqa: N802 (Qt naming)
         painter = QPainter(self)
         # Crisp edges: no antialiasing on the pixel rects.
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, False)
         ox, oy = self.sprite_origin
-        # Draw order: base sprite, then headphones (music-driven), then
-        # sunglasses (right-click driven) — both overlays are independent and
-        # must render correctly together in any combination.
-        paint_grid(painter, self.frame, self.scale, ox, oy)
+        # Draw order: base sprite (swapped to the look-up pose mid-typing),
+        # then headphones (music-driven), then sunglasses (right-click
+        # driven), then the laptop + hands (typing-driven, frontmost) — all
+        # independent and must render correctly together in any combination.
+        base = SPRITE_LOOKUP if (self.typing_on and self._typing_lookup) else self.frame
+        paint_grid(painter, base, self.scale, ox, oy)
         if self.headphones_on:
             paint_headphones(painter, self.scale, ox, oy)
         if self.glasses_on:
             paint_sunglasses(painter, self.scale, ox, oy)
+        if self.typing_on:
+            paint_laptop(painter, self.scale, ox, oy)
+            paint_hands(painter, self.scale, self._hand_frame, self._hand_row_offset, ox, oy)
         painter.end()

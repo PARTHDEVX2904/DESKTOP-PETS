@@ -92,3 +92,9 @@ git push -u origin main
 git remote add origin git@github.com:PARTHDEVX2904/DESKTOP-PETS.git
 git branch -M main
 git push -u origin main
+
+<img width="118" height="85" alt="Screenshot 2026-07-23 124712" src="https://github.com/user-attachments/assets/6b84f245-8235-4066-aaa7-7602a2f4c76d" />
+<img width="105" height="92" alt="Screenshot 2026-07-23 124703" src="https://github.com/user-attachments/assets/08cf7cf1-8056-4f90-90ef-9929064731fb" />
+<img width="121" height="101" alt="Screenshot 2026-07-23 124504" src="https://github.com/user-attachments/assets/2ec12837-ca72-4f61-a4da-543c9715571d" />
+<img width="140" height="95" alt="Screenshot 2026-07-23 124444" src="https://github.com/user-attachments/assets/75151748-165e-4114-ab7f-efc970d1501c" />
+<img width="128" height="76" alt="Screenshot 2026-07-23 124426" src="https://github.com/user-attachments/assets/5c024f26-67a7-4dad-9e0e-408e4376a835" />
